@@ -11,6 +11,7 @@ import org.springframework.statemachine.StateMachine;
 import org.springframework.statemachine.config.StateMachineFactory;
 import org.springframework.statemachine.support.DefaultStateMachineContext;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +21,7 @@ public class PaymentServiceImpl implements PaymentService {
 
   private final PaymentRepository paymentRepository;
   private final StateMachineFactory<PaymentState, PaymentEvent> stateMachineFactory;
+  private final PaymentStateChangeInterceptor paymentStateChangeInterceptor;
 
   @Override
   public Payment newPayment(Payment payment) {
@@ -27,31 +29,34 @@ public class PaymentServiceImpl implements PaymentService {
     return paymentRepository.save(payment);
   }
 
+  @Transactional
   @Override
   public StateMachine<PaymentState, PaymentEvent> preAuth(Long paymentId) {
     var sm = build(paymentId);
 
-    sendEvent(paymentId, sm, PaymentEvent.PRE_AUTHORISE);
+    sendEvent(paymentId, sm, PaymentEvent.PRE_AUTH_APPROVED);
 
-    return null;
+    return sm;
   }
 
+  @Transactional
   @Override
   public StateMachine<PaymentState, PaymentEvent> authorisePayment(Long paymentId) {
     var sm = build(paymentId);
 
     sendEvent(paymentId, sm, PaymentEvent.AUTH_APPROVED);
 
-    return null;
+    return sm;
   }
 
+  @Transactional
   @Override
   public StateMachine<PaymentState, PaymentEvent> declineAuth(Long paymentId) {
     var sm = build(paymentId);
 
     sendEvent(paymentId, sm, PaymentEvent.AUTH_DECLINED);
 
-    return null;
+    return sm;
   }
 
   private void sendEvent(Long paymentId, StateMachine<PaymentState, PaymentEvent> sm, PaymentEvent event) {
@@ -71,6 +76,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     sm.getStateMachineAccessor()
         .doWithAllRegions(sma -> {
+          sma.addStateMachineInterceptor(paymentStateChangeInterceptor);
           sma.resetStateMachine(new DefaultStateMachineContext<>(payment.getState(),
               null, null, null));
         });
